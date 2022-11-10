@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "1.0.0",
+  "info": {
+    "title": "Luna HSM Audit Logger",
+    "id": {
+      "group": null,
+      "name": "TA-luna-hsm-audit-logger",
+      "version": "1.0.1"
+    },
+    "author": [
+      {
+        "name": "Dimiter Todorov",
+        "email": "dimiter@todorov.ca",
+        "company": "Government of Ontario"
+      }
+    ],
+    "releaseDate": null,
+    "description": "This SplunkApp connects to Thales DPOD API to collect logs from Luna CloudHSM. Does NOT support on-premise or physical LunaHSM devices.",
+    "classification": {
+      "intendedAudience": "IT",
+      "categories": [
+        "IT Operations",
+        "CyberSecurity"
+      ],
+      "developmentStatus": "Production/Stable"
+    },
+    "commonInformationModels": null,
+    "license": {
+      "name": "MIT",
+      "text": "LICENSE.txt",
+      "uri": null
+    },
+    "privacyPolicy": {
+      "name": null,
+      "text": null,
+      "uri": null
+    },
+    "releaseNotes": {
+      "name": "README",
+      "text": "README.md",
+      "uri": "https://github.com/dimitertodorov/luna-dpod-splunkapp/blob/master/README.md"
+    }
+  },
+  "dependencies": {},
+  "tasks": [],
+  "inputGroups": {},
+  "incompatibleApps": {},
+  "platformRequirements": {
+    "splunk": {
+      "Enterprise": "*"
+    }
+  }
+}

@@ -1,0 +1,38 @@
+name: Test SplunkApp Python
+run-name: ${{ github.ref_name }} Python Test
+on: [push]
+jobs:
+  Test-LunaHSM-SplunkApp-Python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Setup PowerShell module cache
+        id: cacher
+        uses: actions/cache@v3
+        with:
+          path: "~/.local/share/powershell/Modules"
+          key: ${{ runner.os }}-InvokeBuild
+      - name: Install required PowerShell modules
+        if: steps.cacher.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module InvokeBuild -ErrorAction Stop
+      - name: Invoke Full Test
+        shell: pwsh
+        run: |
+          cd ./test
+          try {
+              # Invoke build and get the variable Result
+              Invoke-Build -Task RunFullTest -Result Result
+          }
+          finally {
+              # Show build error
+              "Build error: $(if ($Result.Error) {$Result.Error} else {'None'})"
+              # Show task summary
+              Write-Output $Result.Tasks | Format-Table Elapsed, Name, Error -AutoSize
+              if ($Result.Error) {
+                  exit 1
+              }
+          }
+        

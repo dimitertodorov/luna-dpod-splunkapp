@@ -1,0 +1,17 @@
+{
+  "authentication_api_base": "http://127.0.0.1:8084",
+  "dpod_api_base": "http://127.0.0.1:8084",
+  "client_id": "thisisnotreal",
+  "client_secret": "somesecret",
+  "proxy_settingsx": {
+    "proxy_url": "127.0.0.1",
+    "proxy_port": "8080",
+    "proxy_username": "",
+    "proxy_password": "",
+    "proxy_type": "http",
+    "proxy_rdns": false
+  },
+  "aggregate_event_types": "LUNA_DECRYPT_SINGLEPART,LUNA_VERIFY_SINGLEPART",
+  "interval": 120,
+  "checkpoints": {}
+}

@@ -1,0 +1,13 @@
+test/test_config.json
+test_config.json
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# GZip Files
+*.tgz
+*.tar.gz
+
+# Build Output Directories
+output/

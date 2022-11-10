@@ -1,0 +1,58 @@
+name: Build and Release SplunkApp by Tag
+run-name: ${{ github.ref_name }} Test SplunkApp in Docker
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+jobs:
+  Pack-Build-Release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Setup PowerShell module cache
+        id: cacher
+        uses: actions/cache@v3
+        with:
+          path: "~/.local/share/powershell/Modules"
+          key: ${{ runner.os }}-InvokeBuild
+      - name: Install required PowerShell modules
+        if: steps.cacher.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module InvokeBuild -ErrorAction Stop
+      - name: Validate Tag Version ${{github.ref_name}} matches app.manifest
+        shell: pwsh
+        run: |
+          try {
+              # Invoke build and get the variable Result
+              Invoke-Build -Task ValidateGitVersionMatch -GitTagName "${{github.ref_name}}" -Result Result
+          }
+          finally {
+              # Show build error
+              "Build error: $(if ($Result.Error) {$Result.Error} else {'None'})"
+              # Show task summary
+              Write-Output $Result.Tasks | Format-Table Elapsed, Name, Error -AutoSize
+              if ($Result.Error) {
+                  exit 1
+              }
+          }
+      - name: Build Release for ${{github.ref_name}}
+        shell: pwsh
+        run: |
+          try {
+              # Invoke build and get the variable Result
+              Invoke-Build -Task BuildSplunkAppTgz -Result Result
+          }
+          finally {
+              # Show build error
+              "Build error: $(if ($Result.Error) {$Result.Error} else {'None'})"
+              # Show task summary
+              Write-Output $Result.Tasks | Format-Table Elapsed, Name, Error -AutoSize
+              if ($Result.Error) {
+                  exit 1
+              }
+          }
+      - uses: ncipollo/release-action@v1
+        with:
+          artifacts: "TA-luna-hsm-audit-logger*.tgz"

@@ -1,0 +1,35 @@
+name: Luna HSM SplunkApp Testing
+run-name: ${{ github.ref_name }} Test SplunkApp in Docker
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:    
+      - master
+jobs:
+  Test-LunaHSM-SplunkApp:
+    strategy:
+      matrix:
+        splunk_docker_image:
+          ["splunk/splunk:8.1", "splunk/splunk:8.2", "splunk/splunk:9.0"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Setup PowerShell module cache
+        id: cacher
+        uses: actions/cache@v3
+        with:
+          path: "~/.local/share/powershell/Modules"
+          key: ${{ runner.os }}-InvokeBuild
+      - name: Install required PowerShell modules
+        if: steps.cacher.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module InvokeBuild -ErrorAction Stop
+      - name: Run SplunkApp E2E Test - ${{ matrix.splunk_docker_image }}
+        shell: pwsh
+        run: |
+          cd ./test/docker
+          Invoke-Build -Task RunDockerIntegrationTest -SplunkDockerImage "${{ matrix.splunk_docker_image }}"
