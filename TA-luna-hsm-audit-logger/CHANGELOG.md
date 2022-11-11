@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.2] - 2022-11-11
 ### Fixed
 - Fixed reference to 'releaseNotes.text' in app.manifest due to SplunkBase verification Failure 
+- Updated Build script to verify version matches in app.manifest, globalConfig.json, and aob_meta
+- Updated Build script to update aob_meta file on TGZ build
 
 ## [1.0.1] - 2022-11-10
 ### Changed
