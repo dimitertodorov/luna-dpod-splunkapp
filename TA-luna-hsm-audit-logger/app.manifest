@@ -5,7 +5,7 @@
     "id": {
       "group": null,
       "name": "TA-luna-hsm-audit-logger",
-      "version": "1.0.1"
+      "version": "1.0.2"
     },
     "author": [
       {
@@ -37,7 +37,7 @@
     },
     "releaseNotes": {
       "name": "README",
-      "text": "README.md",
+      "text": "README.txt",
       "uri": "https://github.com/dimitertodorov/luna-dpod-splunkapp/blob/master/README.md"
     }
   },
