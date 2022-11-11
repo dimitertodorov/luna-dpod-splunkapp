@@ -2,7 +2,7 @@
     "meta": {
         "name": "TA-luna-hsm-audit-logger",
         "displayName": "Luna HSM Audit Logger",
-        "version": "1.0.0",
+        "version": "1.0.2",
         "restRoot": "TA_luna_hsm_audit_logger",
         "schemaVersion": "0.0.3"
     },
