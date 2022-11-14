@@ -9,6 +9,9 @@ import re
 import urllib
 import uuid
 
+client_id = b""
+client_secret = b""
+
 
 class LocalData(object):
     records = {}
@@ -64,10 +67,12 @@ def generate_sample_events(begin: datetime.datetime, end: datetime.datetime = da
     if required_events > 600:
         required_events = 400
     event_interval = int(total_seconds / required_events)
-    event_date = datetime.datetime.fromtimestamp((begin.timestamp()), datetime.timezone.utc)
+    event_date = datetime.datetime.fromtimestamp(
+        (begin.timestamp()), datetime.timezone.utc)
     for i in range(required_events):
         events.append(HsmEvent("LUNA_LOGIN", "LUNA_RET_OK", event_date))
-        event_date = datetime.datetime.fromtimestamp((event_date.timestamp() + event_interval), datetime.timezone.utc)
+        event_date = datetime.datetime.fromtimestamp(
+            (event_date.timestamp() + event_interval), datetime.timezone.utc)
 
     return events
 
@@ -82,19 +87,24 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
                     length = int(self.headers.get_all('content-length')[0])
                     data = dict(urllib.parse.parse_qs(
                         self.rfile.read(length), encoding='utf-8'))
-                    jdata = json.dumps({
-                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.mNQasHSre8hFeCMWElRUUdLE-EtXThIxH9H88cYczKE",
-                        "token_type": "bearer",
-                        "expires_in": 3599,
-                        "scope": "dpod.tuid.7a057e19-9a92-4f94-8caa-157ab9d8ccb7 dpod.tenant.api_appowner dpod.tuid.7a057e19-9a92-4f94-8caa-157ab9d8ccb7.sguid.32b32507-d04b-4c41-af3f-ce4a9d87bbb8",
-                        "jti": "ea42115b8b6e4309bfc9b4104cd85885"
-                    })
-                    jdata = jdata.encode(encoding='utf_8')
-                    self.send_response(200)
-                    self.send_header('content-length', len(jdata))
-                    self.send_header('content-type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(jdata)
+
+                    if ((data[b"client_id"][0] != client_id) | (data[b'client_secret'][0] != client_secret)):
+                        self.send_response(401)
+                        self.end_headers()
+                    else:
+                        jdata = json.dumps({
+                            "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.mNQasHSre8hFeCMWElRUUdLE-EtXThIxH9H88cYczKE",
+                            "token_type": "bearer",
+                            "expires_in": 3599,
+                            "scope": "dpod.tuid.7a057e19-9a92-4f94-8caa-157ab9d8ccb7 dpod.tenant.api_appowner dpod.tuid.7a057e19-9a92-4f94-8caa-157ab9d8ccb7.sguid.32b32507-d04b-4c41-af3f-ce4a9d87bbb8",
+                            "jti": "ea42115b8b6e4309bfc9b4104cd85885"
+                        })
+                        jdata = jdata.encode(encoding='utf8')
+                        self.send_response(200)
+                        self.send_header('content-length', len(jdata))
+                        self.send_header('content-type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(jdata)
                 else:
                     self.send_response(400)
                     self.end_headers()
@@ -118,13 +128,13 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
                     eventOutput = ""
                     for evt in evts:
                         eventOutput += "%s\n" % evt.toJSON()
-                    content = gzip.compress(eventOutput.encode('utf-8'))
+                    content = gzip.compress(eventOutput.encode('utf8'))
                     jobId = str(uuid.uuid4())
                     LocalData.jobs[jobId] = content
                     startedAt = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
                     jdata = json.dumps({"jobId": jobId,
                                        "startedAt": startedAt, "endedAt": None, "state": "ACTIVE", "location": None})
-                    jdata = jdata.encode(encoding='utf_8')
+                    jdata = jdata.encode(encoding='utf8')
                     self.send_response(201)
                     self.send_header('content-length', len(jdata))
                     self.send_header('content-type', 'application/json')
@@ -153,7 +163,7 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
                 location = "http://%s/export_files/%s" % (hostHeader, jobId)
                 jdata = json.dumps({"jobId": jobId,
                                     "startedAt": startedAt, "endedAt": None, "state": "SUCCEEDED", "location": location})
-                jdata = jdata.encode(encoding='utf_8')
+                jdata = jdata.encode(encoding='utf8')
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.send_header('content-length', len(jdata))
@@ -182,7 +192,7 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'text/plain')
             self.send_header('content-length', len(pingReply))
             self.end_headers()
-            self.wfile.write(pingReply.encode("utf_8"))
+            self.wfile.write(pingReply.encode("utf8"))
         else:
             self.send_response(403)
             self.send_header('Content-Type', 'application/json')
@@ -224,8 +234,14 @@ if __name__ == '__main__':
         '--port', type=int, help='Listening port for HTTP Server', default="8084", required=False)
     parser.add_argument('--ip', help='HTTP Server IP',
                         default="0.0.0.0", required=False)
-    args = parser.parse_args()
+    parser.add_argument(
+        '--client_id', help='client_id for token endpoint', default="643e7442-4ca3-49a2-9cd3-41f9352b4138", required=False)
+    parser.add_argument(
+        '--client_secret', help='client_secret for token endpoint', default="securepassword", required=False)
 
+    args = parser.parse_args()
+    client_id = str(args.client_id).encode("utf8")
+    client_secret = str(args.client_secret).encode("utf8")
     server = SimpleHttpServer(args.ip, args.port)
     print('HTTP Server Running...........')
     server.start()

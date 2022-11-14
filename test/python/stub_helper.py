@@ -10,6 +10,11 @@ class StubEw:
     def write_event(self, event):
         print(event)
 
+class StubDefinition:
+    def __init__(self):
+        helper = StubHelper()
+        self.parameters = helper.config_dict
+
 
 class StubHelper:
     def __init__(self):
