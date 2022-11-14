@@ -24,7 +24,7 @@ thales_date_format = '%Y-%m-%d %H:%M:%S %Z'
 # Custom function to set up HTTP Connections. Proxy compatible
 
 
-def get_http_connection(helper, ew, url, credentials):
+def get_http_connection(helper, url, credentials):
     url = urllib.parse.urlparse(url)
     headers = {}
     if credentials['use_proxy']:
@@ -70,8 +70,8 @@ def get_token(helper, ew, credentials):
     }
     payload = urllib.parse.urlencode(auth_request)
 
-    conn, headers = get_http_connection(helper, ew,
-                                        credentials['authentication_api_base'], credentials)
+    conn, headers = get_http_connection(
+        helper, credentials['authentication_api_base'], credentials)
     headers['Accept'] = 'application/json'
     headers['Content-Type'] = 'application/x-www-form-urlencoded'
     try:
@@ -99,7 +99,7 @@ def get_token(helper, ew, credentials):
 
 
 def get_audit_logs(helper, ew, credentials, now, past):
-    conn, headers = get_http_connection(helper, ew,
+    conn, headers = get_http_connection(helper,
                                         credentials['dpod_api_base'], credentials)
     headers['Accept'] = 'application/json'
     headers['Content-Type'] = 'application/json'
@@ -161,7 +161,7 @@ def get_audit_logs(helper, ew, credentials, now, past):
 
 
 def process_audit_log_events(helper, ew, credentials, url):
-    conn, headers = get_http_connection(helper, ew, url, credentials)
+    conn, headers = get_http_connection(helper, url, credentials)
     url = urllib.parse.urlsplit(url)
     conn.request(method="GET", url="%s?%s" %
                  (url.path, url.query), headers=headers)
