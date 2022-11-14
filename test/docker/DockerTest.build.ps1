@@ -13,7 +13,12 @@ param(
     $SplunkDockerImage = "splunk/splunk:9.0",
     $DockerNetworkName = "splunktestnet",
     $MockServerContainerName = "lunamock001",
-    $MockServerHostname = "lunatest.mock"
+    $MockServerHostname = "lunatest.mock",
+    $MockServerPort = "8084",
+    $MockServerUri = "http://lunatest.mock:8084",
+    $MockServerClientId = "643e7442-4ca3-49a2-9cd3-41f9352b4138",
+    $MockServerClientSecret = "securepassword",
+    $MockServerAggregateEventTypes = "LUNA_DECRYPT_SINGLEPART,LUNA_VERIFY_SINGLEPART"
 )
 
 task ResolveVariables {
@@ -88,10 +93,6 @@ task CopySplunkAppFilesToDocker ResolveVariables, AssertDockerContainersExist, {
     }
     exec {
         docker cp $SplunkAppRoot "$($SplunkContainerName):$($SplunkAppsDir)/$($SplunkAppName)"
-        docker exec $SplunkContainerName bash -c "mkdir -p $($SplunkAppsDir)/$($SplunkAppName)/local"
-        docker exec $SplunkContainerName bash -c "cp -f $($SplunkAppsDir)/$($SplunkAppName)/default/*.conf $($SplunkAppsDir)/$($SplunkAppName)/local/"
-        docker cp $MockLocalInputsConf "$($SplunkContainerName):$($SplunkAppsDir)/$($SplunkAppName)/local/"
-        docker exec $SplunkContainerName bash -c "chown -hR splunk:splunk $($SplunkAppsDir)/$($SplunkAppName)/local/"
     }
 }
 
@@ -115,16 +116,22 @@ task CheckDockerSplunkHealth AssertDockerContainersExist, {
 
 
 
-task CheckDockerKVStoreHealth CheckDockerSplunkHealth, {
+task CheckDockerKVStoreHealth CheckDockerSplunkHealth, ResolveVariables, {
     # Wait for KV Store to be available
     $LoopCounter = 0
     $SplunkKVStoreStatus = ""
     While (($LoopCounter -lt $MaxWaitSeconds) -and (-not ($SplunkKVStoreStatus -eq 'ready'))) {
-        $SplunkServerInfo = Invoke-RestMethod -Credential $SplunkCreds `
-            -Method GET `
-            -Uri "https://localhost:8090/services/server/info" -SkipCertificateCheck
-        $SplunkKVStoreStatus = ($SplunkServerInfo.content.dict.key | Where-Object { $_.name -eq 'kvStoreStatus' }).'#text'
-        
+        try {
+            $SplunkServerInfo = Invoke-RestMethod -Credential $SplunkCreds `
+                -Method GET `
+                -Uri "https://localhost:8090/services/server/info" -SkipCertificateCheck
+            $SplunkKVStoreStatus = ($SplunkServerInfo.content.dict.key | Where-Object { $_.name -eq 'kvStoreStatus' }).'#text'    
+        }
+        catch {
+            Write-Output $_.Exception.Message
+            Write-Output $_
+            $SplunkKVStoreStatus = "Error $($_.Exception)"
+        }
         $LoopCounter += 1
         $ProgressParameters = @{
             Activity        = 'Waiting for Splunk KV Store to be Available'
@@ -152,7 +159,14 @@ task CheckDockerSplunkSearchLunaEvents @{
             earliest_time = '-5m'
         }
         While (($SearchResults -eq 0) -and ($LoopCounter -lt $MaxWaitSeconds)) {
-            $SplunkSearchResults = Invoke-RestMethod -Body $SearchParams -Credential $SplunkCreds -Method POST -Uri "https://localhost:8090/services/search/jobs/export" -SkipCertificateCheck
+            $RequestSplat = @{
+                Method               = "POST"
+                Body                 = $SearchParams
+                Uri                  = "https://localhost:8090/services/search/jobs/export"
+                SkipCertificateCheck = $true
+                Credential           = $SplunkCreds
+            }
+            $SplunkSearchResults = Invoke-RestMethod @RequestSplat
             $LoopCounter += 1
             $SearchResults = ($SplunkSearchResults -split "\n").Count - 1
             $ProgressParameters = @{
@@ -177,9 +191,52 @@ task RunDockerIntegrationTest @{
     "CopySplunkAppFilesToDocker",
     "CheckDockerSplunkHealth",
     "CheckDockerKVStoreHealth",
+    "CreateSplunkAppTestInput",
     "CheckDockerSplunkSearchLunaEvents", {
         Write-Output "Testing Successfully Completed"
     }
+}
+
+task ReplaceSplunkAppFilesInDocker ResolveVariables, {
+    Write-Output "Replacing SplunkAppFiles"
+    exec {
+        docker exec $SplunkContainerName bash -c "rm -rf  /tmp/$($SplunkAppName)"
+        docker cp $SplunkAppRoot "$($SplunkContainerName):/tmp/$($SplunkAppName)"
+        docker exec $SplunkContainerName bash -c "cp -rf  /tmp/$($SplunkAppName) $($SplunkAppsDir)"
+    }
+}
+
+task RestartSplunkDockerServices ResolveVariables, {
+    Invoke-RestMethod -Credential $SplunkCreds -Method POST -Uri "https://localhost:8090/services/server/control/restart" -SkipCertificateCheck
+    Start-Sleep -Seconds 10
+}
+
+task ReinstallSplunkAppInDocker ReplaceSplunkAppFilesInDocker, RestartSplunkDockerServices, CheckDockerSplunkHealth, CheckDockerSplunkSearchLunaEvents, {
+    Write-Output "SplunkApp Reinstalled"
+}
+
+task CreateSplunkAppTestInput CheckDockerKVStoreHealth, {
+    $AppRestUri = "https://localhost:8090/servicesNS/nobody/TA-luna-hsm-audit-logger/TA_luna_hsm_audit_logger_luna_hsm_audit_log"
+    $AppRequestBody = @{
+        name                    = "TESTHSM"
+        interval                = "120"
+        index                   = "default"
+        authentication_api_base = $MockServerUri
+        dpod_api_base           = $MockServerUri
+        aggregate_event_types   = $MockServerAggregateEventTypes
+        client_id               = $MockServerClientId
+        client_secret           = $MockServerClientSecret
+        output_mode             = "json"
+    }
+    $RequestSplat = @{
+        Method               = "POST"
+        Body                 = $AppRequestBody
+        Uri                  = $AppRestUri
+        SkipCertificateCheck = $true
+        Credential           = $SplunkCreds
+    }
+    $Result = Invoke-RestMethod @RequestSplat
+    assert ( $Result.entry.content.dpod_api_base -eq $MockServerUri)
 }
 
     

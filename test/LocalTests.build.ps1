@@ -12,7 +12,7 @@ task ResolveVariables {
 
 task RunMockServer {
     $LocalMockServer = (Resolve-Path "python/mock_luna_server/run_mock_dpod.py").Path
-    $Script:MockServerProcess = Start-Process -FilePath "python" -ArgumentList $LocalMockServer,"--port",$MockServerPort -NoNewWindow -PassThru
+    $Script:MockServerProcess = Start-Process -FilePath "python" -ArgumentList $LocalMockServer,"--port",$MockServerPort,"--client_id","thisisnotreal","--client_secret","somesecret" -NoNewWindow -PassThru
     Write-Output "Running Mock Server $($Script:MockServerProcess.Id)"
 }
 
