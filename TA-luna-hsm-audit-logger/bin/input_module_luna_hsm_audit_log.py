@@ -255,18 +255,17 @@ def send_status_event(helper, ew, message, status="INFO"):
 
 
 def validate_input(helper, definition):
-    credentials = {
-        "authentication_api_base": helper.get_arg('authentication_api_base'),
-        "dpod_api_base": helper.get_arg('dpod_api_base'),
-        "Bearer": "",
-        "client_id": helper.get_arg('client_id'),
-        "client_secret": helper.get_arg('client_secret'),
-        "proximity": "",
-        "use_proxy": False,
-        "aggregate_event_types": []
-    }
-    pass
-
+    try:
+        urllib.parse.urlparse(definition.parameters.get('authentication_api_base', None))
+        urllib.parse.urlparse(definition.parameters.get('dpod_api_base', None))
+        client_id = definition.parameters.get('client_id')
+        if not client_id:
+            helper.log_error("Client ID Cannot be Blank %s" % client_id)
+    except Exception as err:
+        error_message = "Validation Exception Occured %s" % err.__class__.__qualname__
+        helper.log_error(error_message)
+        helper.log_error("Trace: %s" % traceback.format_exception(err))
+        exit(2)
 
 def collect_events(helper, ew):
     send_status_event(helper, ew, "Starting Log Collection from %s,client_id=%s" % (
