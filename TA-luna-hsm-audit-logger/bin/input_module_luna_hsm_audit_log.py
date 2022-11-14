@@ -88,9 +88,10 @@ def get_token(helper, ew, credentials):
             auth_data = json.loads(data.decode("utf-8"))
             credentials['Bearer'] = auth_data["access_token"]
             return auth_data["access_token"]
-    except:
-        error_message = "Error occurred on getting the Session token from Cloud AppSec portal. %s" % traceback.format_exc()
+    except Exception as err:
+        error_message = "Error occurred on getting the Session token from Cloud AppSec portal. %s" % err.__class__.__qualname__
         helper.log_error(error_message)
+        helper.log_error("Trace: %s" % traceback.format_exception(err))
         send_status_event(helper, ew, error_message, "ERROR")
         exit(2)
 
@@ -122,9 +123,10 @@ def get_audit_logs(helper, ew, credentials, now, past):
         else:
             data = res.read()
             response_data = json.loads(data.decode("utf-8"))
-    except:
-        error_message = "Error occurred on Starting and Audit Log Export from Thales %s" % traceback.format_exc()
+    except Exception as err:
+        error_message = "Error occurred on Starting and Audit Log Export from Thales %s" % err.__class__.__qualname__
         helper.log_error(error_message)
+        helper.log_error("Trace: %s" % traceback.format_exception(err))
         send_status_event(helper, ew, error_message, "ERROR")
         exit(2)
     conn.close()
@@ -147,9 +149,10 @@ def get_audit_logs(helper, ew, credentials, now, past):
             else:
                 data = res.read()
                 response_data = json.loads(data.decode("utf-8"))
-        except:
-            error_message = "Error occurred on retrieving Log Export from Thales %s" % traceback.format_exc()
+        except Exception as err:
+            error_message = "Error occurred on retrieving Log Export from Thales %s" % err.__class__.__qualname__
             helper.log_error(error_message)
+            helper.log_error("Trace: %s" % traceback.format_exception(err))
             send_status_event(helper, ew, error_message, 'ERROR')
             exit(2)
         conn.close()
