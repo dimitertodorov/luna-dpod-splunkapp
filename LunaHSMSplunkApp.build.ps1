@@ -45,7 +45,7 @@ task UpdateAobMetaCode {
 
 task BuildSplunkAppTgz GetVersion, UpdateAobMetaCode, {
     Get-ChildItem -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force
-    exec { tar -czf "./$PackageFileName" "./$SplunkAppFullName" }
+    exec { tar -czf "./$PackageFileName" "$SplunkAppFullName" }
     $PackagePath = (Resolve-Path -Path "./$PackageFileName").Path
     Write-Output "##vso[task.setvariable variable=SplunkAppPackagePath]$PackagePath"
 }
