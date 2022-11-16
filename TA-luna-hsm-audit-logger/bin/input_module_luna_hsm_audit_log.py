@@ -346,7 +346,8 @@ def collect_events(helper, ew):
     now = int(round(time.time()))
     past = now - interval
 
-    # Check the last run checkpoint if set and use that as the 'from' parameter to Thales.
+    # Check the last run checkpoint if set and use that as the 'from' parameter to Thales. 
+    # Make sure the interval is not more than 30 days
     if last_checkpoint and ((past > int(last_checkpoint)) and ((now - int(last_checkpoint)) < 2591998)):
         past = datetime.datetime.fromtimestamp(
             int(last_checkpoint)).strftime(date_format)
