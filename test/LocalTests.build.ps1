@@ -4,15 +4,17 @@ param(
 )
 
 task ResolveVariables {
-    $TestConfigProps = Get-Content -Raw "./test_config.sample.json" | ConvertFrom-Json
-    $TestConfigProps.authentication_api_base = "http://localhost:$MockServerPort"
-    $TestConfigProps.dpod_api_base = "http://localhost:$MockServerPort"
+    $Script:TestConfigProps = Get-Content -Raw "./test_config.sample.json" | ConvertFrom-Json
+    $TestConfigProps.authentication_api_base = "https://localhost:$MockServerPort"
+    $TestConfigProps.dpod_api_base = "https://localhost:$MockServerPort"
     $TestConfigProps | ConvertTo-Json | Out-File "./test_config.json" -Force
+    $Script:SslCertPath = (Resolve-Path "python/mock_luna_server/ssl/lunatest.mock.pem").Path
+    $env:SSL_CERT_FILE = $Script:SslCertPath
 }
 
-task RunMockServer {
+task RunMockServer ResolveVariables, {
     $LocalMockServer = (Resolve-Path "python/mock_luna_server/run_mock_dpod.py").Path
-    $Script:MockServerProcess = Start-Process -FilePath "python" -ArgumentList $LocalMockServer,"--port",$MockServerPort,"--client_id","thisisnotreal","--client_secret","somesecret" -NoNewWindow -PassThru
+    $Script:MockServerProcess = Start-Process -FilePath "python" -ArgumentList $LocalMockServer,"--port",$MockServerPort,"--client_id",$TestConfigProps.client_id,"--client_secret","$($TestConfigProps.client_secret)" -NoNewWindow -PassThru
     Write-Output "Running Mock Server $($Script:MockServerProcess.Id)"
 }
 
@@ -29,7 +31,7 @@ task WaitForMockServer {
         }
         
         try {
-            $PingStatus = (Invoke-WebRequest -Uri "http://localhost:$MockServerPort/ping" -Method Get).Content
+            $PingStatus = (Invoke-WebRequest -Uri "https://localhost:$MockServerPort/ping" -Method Get -SkipCertificateCheck).Content
         }
         catch {
             $PingStatus = $_.Exception
@@ -41,6 +43,7 @@ task WaitForMockServer {
         Start-Sleep -Seconds 1
     }
     assert ($PingStatus -eq "OK")
+    Write-Output "HTTPS Mock Server is Up"
 }
 
 task RunLocalApp WaitForMockServer, ResolveVariables, {

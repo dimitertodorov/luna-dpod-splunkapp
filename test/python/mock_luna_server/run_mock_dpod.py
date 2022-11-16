@@ -2,7 +2,10 @@ import datetime
 import gzip
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import os
+import pathlib
 from socketserver import ThreadingMixIn
+import ssl
 import threading
 import argparse
 import re
@@ -160,7 +163,7 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
             hostHeader = self.headers.get_all('Host')[0]
             if jobData:
                 startedAt = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
-                location = "http://%s/export_files/%s" % (hostHeader, jobId)
+                location = "https://%s/export_files/%s" % (hostHeader, jobId)
                 jdata = json.dumps({"jobId": jobId,
                                     "startedAt": startedAt, "endedAt": None, "state": "SUCCEEDED", "location": location})
                 jdata = jdata.encode(encoding='utf8')
@@ -172,7 +175,6 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
             else:
                 self.send_response(400)
                 self.end_headers()
-
         elif None != re.search('/export_files/*', self.path):
             jobId = self.path.split('/')[-1]
             jobId = jobId.replace('?', '')
@@ -210,9 +212,19 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 
 class SimpleHttpServer():
     def __init__(self, ip, port):
+        # Resolve SSL Certificates
+        current = os.path.dirname(os.path.realpath(__file__))
+        parent = pathlib.Path(current).absolute()
+        ssl_path = pathlib.Path(parent) / 'ssl'
+        cert_path = ssl_path / 'lunatest.mock.pem'
+        key_path = ssl_path / 'lunatest.mock.key'
         self.server = ThreadedHTTPServer((ip, port), HTTPRequestHandler)
+        self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        self.ssl_context.load_cert_chain(cert_path, key_path)
 
     def start(self):
+        self.server.socket = self.ssl_context.wrap_socket(
+            self.server.socket, server_side=True)
         self.server_thread = threading.Thread(target=self.server.serve_forever)
         self.server_thread.daemon = True
         self.server_thread.start()
@@ -235,9 +247,9 @@ if __name__ == '__main__':
     parser.add_argument('--ip', help='HTTP Server IP',
                         default="0.0.0.0", required=False)
     parser.add_argument(
-        '--client_id', help='client_id for token endpoint', default="643e7442-4ca3-49a2-9cd3-41f9352b4138", required=False)
+        '--client_id', help='client_id for token endpoint', default="thisisnotreal", required=False)
     parser.add_argument(
-        '--client_secret', help='client_secret for token endpoint', default="securepassword", required=False)
+        '--client_secret', help='client_secret for token endpoint', default="somesecret", required=False)
 
     args = parser.parse_args()
     client_id = str(args.client_id).encode("utf8")
