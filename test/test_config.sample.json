@@ -1,6 +1,6 @@
 {
-  "authentication_api_base": "http://127.0.0.1:8084",
-  "dpod_api_base": "http://127.0.0.1:8084",
+  "authentication_api_base": "https://127.0.0.1:8084",
+  "dpod_api_base": "https://127.0.0.1:8084",
   "client_id": "thisisnotreal",
   "client_secret": "somesecret",
   "proxy_settingsx": {

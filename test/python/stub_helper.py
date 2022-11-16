@@ -40,6 +40,9 @@ class StubHelper:
 
     def get_input_type(self):
         return 'hsm_stub'
+    
+    def get_input_stanza_names(self):
+        return 'hsm_stub'
 
     def get_output_index(self):
         return 'hsm_stub'
@@ -47,7 +50,24 @@ class StubHelper:
     def get_sourcetype(self):
         return 'hsm_stub'
 
-    def new_event(self, source, index, sourcetype, data):
+    # Functions to help create events.
+    def new_event(self, data, time=None, host=None, index=None, source=None, sourcetype=None, done=True, unbroken=True):
+        """Create a Splunk event object.
+
+        :param data: ``string``, the event's text.
+        :param time: ``float``, time in seconds, including up to 3 decimal places to represent milliseconds.
+        :param host: ``string``, the event's host, ex: localhost.
+        :param index: ``string``, the index this event is specified to write to, or None if default index.
+        :param source: ``string``, the source of this event, or None to have Splunk guess.
+        :param sourcetype: ``string``, source type currently set on this event, or None to have Splunk guess.
+        :param done: ``boolean``, is this a complete ``Event``? False if an ``Event`` fragment.
+        :param unbroken: ``boolean``, Is this event completely encapsulated in this ``Event`` object?
+        :return: ``Event`` object
+        """
+        if host:
+            data += f",host={host}"
+        else:
+            data += ",host=localmock"
         return data
 
     def log(self, msg):
