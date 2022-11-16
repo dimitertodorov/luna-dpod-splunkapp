@@ -11,11 +11,6 @@ from bz2 import compress
 from distutils.log import error
 from io import BytesIO
 
-try:
-    from StringIO import StringIO  # for Python 2
-except ImportError:
-    from io import StringIO  # for Python 3
-
 timeout_seconds = 240
 
 date_format = "%Y-%m-%dT%H:%M:%SZ"
