@@ -21,190 +21,272 @@ timeout_seconds = 240
 date_format = "%Y-%m-%dT%H:%M:%SZ"
 thales_date_format = '%Y-%m-%d %H:%M:%S %Z'
 
-# Custom function to set up HTTP Connections. Proxy compatible
 
+class LunaCloudHsmProcessor:
+    def __init__(self, helper, ew, definition=None, validate_only=False):
+        self.helper = helper
+        self.ew = ew
+        self.definition = definition
+        self.access_token = None
 
-def get_http_connection(helper, url, credentials):
-    url = urllib.parse.urlparse(url)
-    headers = {}
-    if credentials['use_proxy']:
-        proxy_host = credentials['proxy_url']
-        proxy_port = credentials['proxy_port']
-        if (credentials['proxy_username']):
-            userAndPass = credentials['proxy_username'] + \
-                ":" + credentials['proxy_password']
-            userAndPass = b64encode(userAndPass.encode()).decode("ascii")
-            headers['Proxy-Authorization'] = "Basic %s", userAndPass
-        if (url.scheme == 'http'):
-            port = url.port if url.port else 80
-            conn = http.client.HTTPConnection(proxy_host, proxy_port)
-        elif (url.scheme == 'https'):
-            port = url.port if url.port else 443
-            conn = http.client.HTTPSConnection(proxy_host, proxy_port)
+        if validate_only:
+            self.auth_url = urllib.parse.urlparse(self.definition.parameters.get(
+                'authentication_api_base', None))
+            self.api_url = urllib.parse.urlparse(
+                self.definition.parameters.get('dpod_api_base', None))
         else:
-            helper.log_error(
-                "Invalid Scheme in URL %s", url.scheme)
-            exit(2)
-        conn.set_tunnel(url.netloc, port=port)
-    else:
-        if (url.scheme == 'http'):
-            port = url.port if url.port else 80
-            conn = http.client.HTTPConnection(url.hostname, port=port)
-        elif (url.scheme == 'https'):
-            port = url.port if url.port else 443
-            conn = http.client.HTTPSConnection(url.hostname, port=port)
-        else:
-            helper.log_error(
-                "Invalid Scheme in URL %s" % url.scheme)
-            exit(2)
-    return conn, headers
+            self.auth_url = urllib.parse.urlparse(
+                helper.get_arg('authentication_api_base'))
+            self.api_url = urllib.parse.urlparse(
+                helper.get_arg('dpod_api_base'))
+            self.properties = {
+                "authentication_api_base": helper.get_arg('authentication_api_base'),
+                "dpod_api_base": helper.get_arg('dpod_api_base'),
+                "Bearer": "",
+                "client_id": helper.get_arg('client_id'),
+                "client_secret": helper.get_arg('client_secret'),
+                "proximity": "",
+                "use_proxy": False,
+                "aggregate_event_types": []
+            }
+            if (helper.get_arg('aggregate_event_types')):
+                self.properties['aggregate_event_types'] = str(
+                    helper.get_arg('aggregate_event_types')).split(',')
 
-# Get a token from Thales Auth endpoint
+            proxy_settings = helper.get_proxy()
+            if (proxy_settings):
+                self.properties['use_proxy'] = True
+                self.properties['proxy_url'] = proxy_settings['proxy_url']
+                self.properties['proxy_port'] = proxy_settings['proxy_port']
+                self.properties['proxy_type'] = proxy_settings['proxy_type']
+                self.properties['proxy_username'] = proxy_settings['proxy_username']
+                self.properties['proxy_password'] = proxy_settings['proxy_password']
+                self.properties['proxy_rdns'] = proxy_settings['proxy_rdns']
 
-
-def get_token(helper, ew, credentials):
-    auth_request = {
-        "client_id": credentials['client_id'],
-        "client_secret": credentials['client_secret'],
-        "grant_type": "client_credentials",
-    }
-    payload = urllib.parse.urlencode(auth_request)
-
-    conn, headers = get_http_connection(
-        helper, credentials['authentication_api_base'], credentials)
-    headers['Accept'] = 'application/json'
-    headers['Content-Type'] = 'application/x-www-form-urlencoded'
-    try:
-        conn.request("POST", "/oauth/token", payload, headers)
-        res = conn.getresponse()
-        if res.status != 200:
-            error_message = "Failed getting HSM Bearer Token with response => %d : %s" % (
-                res.status, res.reason)
-            helper.log_error(error_message)
-            send_status_event(helper, ew, error_message, "ERROR")
-            exit(2)
-        else:
-            data = res.read()
-            auth_data = json.loads(data.decode("utf-8"))
-            credentials['Bearer'] = auth_data["access_token"]
-            return auth_data["access_token"]
-    except Exception as err:
-        error_message = "Error occurred on getting the Session token from Cloud AppSec portal. %s" % err.__class__.__qualname__
-        helper.log_error(error_message)
-        helper.log_error("Trace: %s" % traceback.format_exception(err))
-        send_status_event(helper, ew, error_message, "ERROR")
-        exit(2)
-
-# This function uses the DPOD Audit Query API to collect logs from DPOD Cloud HSM
-# Returns the location of the audit logs in the URL
-
-
-def get_audit_logs(helper, ew, credentials, now, past):
-    conn, headers = get_http_connection(helper,
-                                        credentials['dpod_api_base'], credentials)
-    headers['Accept'] = 'application/json'
-    headers['Content-Type'] = 'application/json'
-    headers['Authorization'] = "Bearer %s" % credentials['Bearer']
-    audit_request = {
-        "from": past,
-        "to": now
-    }
-    payload = json.dumps(audit_request)
-    response_data = {}
-    try:
-        conn.request("POST", "/v1/audit-log-exports", payload, headers)
-        res = conn.getresponse()
-        if res.status != 201:
-            error_message = "Failed Audit Log Export with response => %d : %s" % (
-                res.status, res.reason)
-            helper.log_error(error_message)
-            send_status_event(helper, ew, error_message, "ERROR")
-            exit(2)
-        else:
-            data = res.read()
-            response_data = json.loads(data.decode("utf-8"))
-    except Exception as err:
-        error_message = "Error occurred on Starting and Audit Log Export from Thales %s" % err.__class__.__qualname__
-        helper.log_error(error_message)
-        helper.log_error("Trace: %s" % traceback.format_exception(err))
-        send_status_event(helper, ew, error_message, "ERROR")
-        exit(2)
-    conn.close()
-
-    job_path = "/v1/audit-log-exports/%s" % response_data["jobId"]
-
-    headers.pop("Content-Type")
-    max_wait_times = timeout_seconds / 2
-    run_counter = 0
-    while (response_data["state"] != "SUCCEEDED" and run_counter < max_wait_times):
-        time.sleep(2)
+    def validate_input(self):
         try:
-            conn.request(method="GET", url=job_path, headers=headers)
+            assert (self.auth_url.scheme.lower() == "https")
+            assert (self.api_url.scheme.lower() == "https")
+        except Exception as err:
+            error_message = "Validation Exception Occured %s" % err.__class__.__qualname__
+            self.helper.log_error(error_message)
+            self.helper.log_error("Trace: %s" %
+                                  traceback.format_exception(err))
+            exit(2)
+
+    # Send a status event to Splunk
+    def send_status_event(self, message, status="INFO"):
+        build_event = "_time=" + \
+            str(round(datetime.datetime.now().timestamp())) + ","
+        build_event = build_event + "clientid=" + \
+            str(self.helper.get_arg('client_id'))+','
+        build_event = build_event + "message=" + json.dumps(message)
+        build_event = build_event + ",severity=" + status
+        event = self.new_event(source=self.helper.get_input_type(), index=self.helper.get_output_index(
+        ), sourcetype=self.helper.get_sourcetype(), data=build_event)
+        self.ew.write_event(event)
+
+    # Get a token from Thales Auth endpoint
+    def get_token(self):
+        auth_request = {
+            "client_id": self.properties['client_id'],
+            "client_secret": self.properties['client_secret'],
+            "grant_type": "client_credentials",
+        }
+        payload = urllib.parse.urlencode(auth_request)
+
+        conn, headers = self.get_http_connection(self.auth_url.geturl())
+        headers['Accept'] = 'application/json'
+        headers['Content-Type'] = 'application/x-www-form-urlencoded'
+        try:
+            conn.request("POST", "/oauth/token", payload, headers)
             res = conn.getresponse()
             if res.status != 200:
-                error_message = "Error occurred on Starting and Audit Log Export from Thales => %d : %s" % res.status, res.reason
-                helper.log_error(error_message)
-                send_status_event(helper, ew, error_message, 'ERROR')
+                error_message = "Failed getting HSM Bearer Token with response => %d : %s" % (
+                    res.status, res.reason)
+                self.helper.log_error(error_message)
+                self.send_status_event(error_message, "ERROR")
+                exit(2)
+            else:
+                data = res.read()
+                auth_data = json.loads(data.decode("utf-8"))
+                self.access_token = auth_data["access_token"]
+                return auth_data["access_token"]
+        except Exception as err:
+            error_message = "Error occurred on getting the Session token from Cloud AppSec portal. %s" % err.__class__.__qualname__
+            self.helper.log_error(error_message)
+            self.helper.log_error("Trace: %s" %
+                                  traceback.format_exception(err))
+            self.send_status_event(error_message, "ERROR")
+            exit(2)
+
+    # Custom function to set up HTTP Connections. Proxy compatible
+    def get_http_connection(self, url):
+        url = urllib.parse.urlparse(url)
+        headers = {}
+        if self.properties['use_proxy']:
+            proxy_host = self.properties['proxy_url']
+            proxy_port = self.properties['proxy_port']
+            if (self.properties['proxy_username']):
+                userAndPass = self.properties['proxy_username'] + \
+                    ":" + self.properties['proxy_password']
+                userAndPass = b64encode(userAndPass.encode()).decode("ascii")
+                headers['Proxy-Authorization'] = "Basic %s", userAndPass
+            if (url.scheme == 'https'):
+                port = url.port if url.port else 443
+                conn = http.client.HTTPSConnection(proxy_host, proxy_port)
+            else:
+                self.helper.log_error(
+                    "Invalid Scheme in URL - %s. Only HTTPS supported.", url.geturl())
+                exit(2)
+            conn.set_tunnel(url.netloc, port=port)
+        else:
+            if (url.scheme == 'https'):
+                port = url.port if url.port else 443
+                conn = http.client.HTTPSConnection(url.hostname, port=port)
+            else:
+                self.helper.log_error(
+                    "Invalid Scheme in URL - %s. Only HTTPS supported.", url.geturl())
+                exit(2)
+        return conn, headers
+
+    # This function uses the DPOD Audit Query API to collect logs from DPOD Cloud HSM
+    # Returns the location of the audit logs in the URL
+    def get_audit_logs(self, now, past):
+        conn, headers = self.get_http_connection(self.api_url.geturl())
+        headers['Accept'] = 'application/json'
+        headers['Content-Type'] = 'application/json'
+        headers['Authorization'] = "Bearer %s" % self.access_token
+        audit_request = {
+            "from": past,
+            "to": now
+        }
+        payload = json.dumps(audit_request)
+        response_data = {}
+        try:
+            conn.request("POST", "/v1/audit-log-exports", payload, headers)
+            res = conn.getresponse()
+            if res.status != 201:
+                error_message = "Failed Audit Log Export with response => %d : %s" % (
+                    res.status, res.reason)
+                self.helper.log_error(error_message)
+                self.send_status_event(error_message, "ERROR")
                 exit(2)
             else:
                 data = res.read()
                 response_data = json.loads(data.decode("utf-8"))
         except Exception as err:
-            error_message = "Error occurred on retrieving Log Export from Thales %s" % err.__class__.__qualname__
-            helper.log_error(error_message)
-            helper.log_error("Trace: %s" % traceback.format_exception(err))
-            send_status_event(helper, ew, error_message, 'ERROR')
+            error_message = "Error occurred on Starting and Audit Log Export from Thales %s" % err.__class__.__qualname__
+            self.helper.log_error(error_message)
+            self.helper.log_error("Trace: %s" %
+                                  traceback.format_exception(err))
+            self.send_status_event(error_message, "ERROR")
             exit(2)
         conn.close()
-        run_counter = run_counter+1
-    return response_data
 
-# Processes an audit log .gzip from DPOD Audit Query API
-# Will aggregate settings depending on Configuration
+        # Start polling for audit-log-export in DPOD API
+        job_path = "/v1/audit-log-exports/%s" % response_data["jobId"]
+        headers.pop("Content-Type")
 
+        max_wait_times = timeout_seconds / 2
+        run_counter = 0
+        while (response_data["state"] != "SUCCEEDED" and run_counter < max_wait_times):
+            time.sleep(2)
+            try:
+                conn.request(method="GET", url=job_path, headers=headers)
+                res = conn.getresponse()
+                if res.status != 200:
+                    error_message = "Error occurred on Starting and Audit Log Export from Thales => %d : %s" % res.status, res.reason
+                    self.helper.log_error(error_message)
+                    self.send_status_event(error_message, 'ERROR')
+                    exit(2)
+                else:
+                    data = res.read()
+                    response_data = json.loads(data.decode("utf-8"))
+            except Exception as err:
+                error_message = "Error occurred on retrieving Log Export from Thales %s" % err.__class__.__qualname__
+                self.helper.log_error(error_message)
+                self.helper.log_error("Trace: %s" %
+                                      traceback.format_exception(err))
+                self.send_status_event(error_message, 'ERROR')
+                exit(2)
+            conn.close()
+            run_counter = run_counter+1
+        return response_data
 
-def process_audit_log_events(helper, ew, credentials, url):
-    conn, headers = get_http_connection(helper, url, credentials)
-    url = urllib.parse.urlsplit(url)
-    conn.request(method="GET", url="%s?%s" %
-                 (url.path, url.query), headers=headers)
-    response = conn.getresponse()
-    compressedFile = BytesIO(response.read())
-    conn.close()
-    decompressedFile = gzip.GzipFile(fileobj=compressedFile, mode='rb')
-    decompressedFile.seek(0)
-    aggregate_events = {}
-    while True:
-        line = decompressedFile.readline()
-        if line == b'':
-            break
-        luna_evt = json.loads(line)
-        luna_meta = json.loads(luna_evt['meta'])
-        if (credentials['aggregate_event_types'] and str(luna_evt['action']) in credentials['aggregate_event_types']):
-            aggregate_key = str(luna_evt['action'])+":"+str(luna_evt['status'])+":"+str(
-                luna_meta['clientip'])+":"+str(luna_meta['partid'])
-            if aggregate_key in aggregate_events:
-                aggregate_events[aggregate_key]['count'] += 1
-                aggregate_events[aggregate_key]['end_time'] = str(round(datetime.datetime.strptime(
-                    luna_evt['time'], thales_date_format).timestamp()))
-            else:
-                aggregate_events[aggregate_key] = {
-                    'count': 1,
-                    'original_event': luna_evt,
-                    'original_meta': luna_meta,
-                    'begin_time': str(round(datetime.datetime.strptime(
-                        luna_evt['time'], thales_date_format).timestamp())),
-                    'end_time': str(round(datetime.datetime.strptime(
+    # Processes an audit log .gzip from DPOD Audit Query API
+    # Will aggregate events depending on input configuration
+    def process_audit_log_events(self, url):
+        conn, headers = self.get_http_connection(url)
+        url = urllib.parse.urlsplit(url)
+        conn.request(method="GET", url="%s?%s" %
+                     (url.path, url.query), headers=headers)
+        response = conn.getresponse()
+        compressedFile = BytesIO(response.read())
+        conn.close()
+        decompressedFile = gzip.GzipFile(fileobj=compressedFile, mode='rb')
+        decompressedFile.seek(0)
+        aggregate_events = {}
+        while True:
+            line = decompressedFile.readline()
+            if line == b'':
+                break
+            luna_evt = json.loads(line)
+            luna_meta = json.loads(luna_evt['meta'])
+            if (self.properties['aggregate_event_types'] and str(luna_evt['action']) in self.properties['aggregate_event_types']):
+                aggregate_key = str(luna_evt['action'])+":"+str(luna_evt['status'])+":"+str(
+                    luna_meta['clientip'])+":"+str(luna_meta['partid'])
+                if aggregate_key in aggregate_events:
+                    aggregate_events[aggregate_key]['count'] += 1
+                    aggregate_events[aggregate_key]['end_time'] = str(round(datetime.datetime.strptime(
                         luna_evt['time'], thales_date_format).timestamp()))
-                }
-        else:
+                else:
+                    aggregate_events[aggregate_key] = {
+                        'count': 1,
+                        'original_event': luna_evt,
+                        'original_meta': luna_meta,
+                        'begin_time': str(round(datetime.datetime.strptime(
+                            luna_evt['time'], thales_date_format).timestamp())),
+                        'end_time': str(round(datetime.datetime.strptime(
+                            luna_evt['time'], thales_date_format).timestamp()))
+                    }
+            else:
+                build_event = "_time=" + \
+                    str(round(datetime.datetime.strptime(
+                        luna_evt['time'], thales_date_format).timestamp()))+","
+                build_event = build_event + "resourceID=" + \
+                    str(luna_evt['resourceID'])+','
+                build_event = build_event + "clientid=" + \
+                    str(self.properties['client_id'])+','
+                build_event = build_event + "actorID=" + \
+                    str(luna_evt['actorID'])+','
+                build_event = build_event + "tenantID=" + \
+                    str(luna_evt['tenantID'])+','
+                build_event = build_event + "action=" + \
+                    str(luna_evt['action'])+','
+                build_event = build_event + "status=" + \
+                    str(luna_evt['status'])+','
+                build_event = build_event + "clientip=" + \
+                    str(luna_meta['clientip'])+','
+                build_event = build_event + "hsmid=" + \
+                    str(luna_meta['hsmid'])+','
+                build_event = build_event + "partid=" + \
+                    str(luna_meta['partid'])
+                event = self.new_event(source=self.helper.get_input_type(), index=self.helper.get_output_index(
+                ), sourcetype=self.helper.get_sourcetype(), data=build_event)
+                self.ew.write_event(event)
+
+        # Iterate through aggregated events and write to stream
+        for agg_key in aggregate_events:
+            luna_evt = aggregate_events[agg_key]['original_event']
+            luna_meta = aggregate_events[agg_key]['original_meta']
             build_event = "_time=" + \
                 str(round(datetime.datetime.strptime(
                     luna_evt['time'], thales_date_format).timestamp()))+","
+            build_event = build_event + "clientid=" + \
+                str(self.properties['client_id'])+','
             build_event = build_event + "resourceID=" + \
                 str(luna_evt['resourceID'])+','
-            build_event = build_event + "clientid=" + \
-                str(credentials['client_id'])+','
             build_event = build_event + "actorID="+str(luna_evt['actorID'])+','
             build_event = build_event + "tenantID=" + \
                 str(luna_evt['tenantID'])+','
@@ -214,92 +296,46 @@ def process_audit_log_events(helper, ew, credentials, url):
                 str(luna_meta['clientip'])+','
             build_event = build_event + "hsmid="+str(luna_meta['hsmid'])+','
             build_event = build_event + "partid="+str(luna_meta['partid'])+','
-            event = helper.new_event(source=helper.get_input_type(), index=helper.get_output_index(
-            ), sourcetype=helper.get_sourcetype(), data=build_event)
-            ew.write_event(event)
+            build_event = build_event + "count=" + \
+                str(aggregate_events[agg_key]['count'])
+            event = self.new_event(source=self.helper.get_input_type(), index=self.helper.get_output_index(
+            ), sourcetype=self.helper.get_sourcetype(), data=build_event)
+            self.ew.write_event(event)
 
-    # Iterate through aggregated events and write to stream
-    for agg_key in aggregate_events:
-        luna_evt = aggregate_events[agg_key]['original_event']
-        luna_meta = aggregate_events[agg_key]['original_meta']
-        build_event = "_time=" + \
-            str(round(datetime.datetime.strptime(
-                luna_evt['time'], thales_date_format).timestamp()))+","
-        build_event = build_event + "clientid=" + \
-            str(credentials['client_id'])+','
-        build_event = build_event + "resourceID=" + \
-            str(luna_evt['resourceID'])+','
-        build_event = build_event + "actorID="+str(luna_evt['actorID'])+','
-        build_event = build_event + "tenantID=" + \
-            str(luna_evt['tenantID'])+','
-        build_event = build_event + "action="+str(luna_evt['action'])+','
-        build_event = build_event + "status="+str(luna_evt['status'])+','
-        build_event = build_event + "clientip=" + \
-            str(luna_meta['clientip'])+','
-        build_event = build_event + "hsmid="+str(luna_meta['hsmid'])+','
-        build_event = build_event + "partid="+str(luna_meta['partid'])+','
-        build_event = build_event + "count=" + \
-            str(aggregate_events[agg_key]['count'])
-        event = helper.new_event(source=helper.get_input_type(), index=helper.get_output_index(
-        ), sourcetype=helper.get_sourcetype(), data=build_event)
-        ew.write_event(event)
+    # Wrapper function to help create events.
+    def new_event(self, data, time=None, host=None, index=None, source=None, sourcetype=None, done=True, unbroken=True):
+        """Create a Splunk event object. - Wrapper around the TA Helper to insert the DPOD Host if not provided in the event
 
-
-def send_status_event(helper, ew, message, status="INFO"):
-    build_event = "_time=" + \
-        str(round(datetime.datetime.now().timestamp())) + ","
-    build_event = build_event + "clientid=" + \
-        str(helper.get_arg('client_id'))+','
-    build_event = build_event + "message=" + json.dumps(message)
-    build_event = build_event + ",severity=" + status
-    event = helper.new_event(source=helper.get_input_type(), index=helper.get_output_index(
-    ), sourcetype=helper.get_sourcetype(), data=build_event)
-    ew.write_event(event)
+        :param data: ``string``, the event's text.
+        :param time: ``float``, time in seconds, including up to 3 decimal places to represent milliseconds.
+        :param host: ``string``, the event's host, ex: localhost.
+        :param index: ``string``, the index this event is specified to write to, or None if default index.
+        :param source: ``string``, the source of this event, or None to have Splunk guess.
+        :param sourcetype: ``string``, source type currently set on this event, or None to have Splunk guess.
+        :param done: ``boolean``, is this a complete ``Event``? False if an ``Event`` fragment.
+        :param unbroken: ``boolean``, Is this event completely encapsulated in this ``Event`` object?
+        :return: ``Event`` object
+        """
+        data += f",input_config={self.helper.get_input_stanza_names()}"
+        if host:
+            return self.helper.new_event(data, time=time, host=host, index=index, source=index, sourcetype=sourcetype, done=True, unbroken=True)
+        else:
+            return self.helper.new_event(data, time=time, host=self.api_url.hostname, index=index, source=index, sourcetype=sourcetype, done=True, unbroken=True)
 
 
 def validate_input(helper, definition):
-    try:
-        urllib.parse.urlparse(definition.parameters.get('authentication_api_base', None))
-        urllib.parse.urlparse(definition.parameters.get('dpod_api_base', None))
-        client_id = definition.parameters.get('client_id')
-        if not client_id:
-            helper.log_error("Client ID Cannot be Blank %s" % client_id)
-    except Exception as err:
-        error_message = "Validation Exception Occured %s" % err.__class__.__qualname__
-        helper.log_error(error_message)
-        helper.log_error("Trace: %s" % traceback.format_exception(err))
-        exit(2)
+    validator = LunaCloudHsmProcessor(helper, None, definition, True)
+    validator.validate_input()
+
 
 def collect_events(helper, ew):
-    send_status_event(helper, ew, "Starting Log Collection from %s,client_id=%s" % (
+    processor = LunaCloudHsmProcessor(helper, ew, None, False)
+
+    processor.send_status_event("Starting Log Collection from %s,client_id=%s" % (
         helper.get_arg('dpod_api_base'), helper.get_arg('client_id')))
 
-    credentials = {
-        "authentication_api_base": helper.get_arg('authentication_api_base'),
-        "dpod_api_base": helper.get_arg('dpod_api_base'),
-        "Bearer": "",
-        "client_id": helper.get_arg('client_id'),
-        "client_secret": helper.get_arg('client_secret'),
-        "proximity": "",
-        "use_proxy": False,
-        "aggregate_event_types": []
-    }
-    if (helper.get_arg('aggregate_event_types')):
-        credentials['aggregate_event_types'] = str(
-            helper.get_arg('aggregate_event_types')).split(',')
-
-    proxy_settings = helper.get_proxy()
-    if (proxy_settings):
-        credentials['use_proxy'] = True
-        credentials['proxy_url'] = proxy_settings['proxy_url']
-        credentials['proxy_port'] = proxy_settings['proxy_port']
-        credentials['proxy_type'] = proxy_settings['proxy_type']
-        credentials['proxy_username'] = proxy_settings['proxy_username']
-        credentials['proxy_password'] = proxy_settings['proxy_password']
-        credentials['proxy_rdns'] = proxy_settings['proxy_rdns']
-
-    # Get the autherization token for the app using client_id and client_secret
-    get_token(helper, ew, credentials)
+    # Get the auth token for the app using client_id and client_secret
+    processor.get_token()
 
     # Get time window to filter for logs
     now_checkpoint = str(round(time.time()))
@@ -317,13 +353,15 @@ def collect_events(helper, ew):
     else:
         past = datetime.datetime.fromtimestamp(past).strftime(date_format)
     now = datetime.datetime.fromtimestamp(now).strftime(date_format)
-    # Create an Audit Log export file
-    audit_logs = get_audit_logs(helper, ew, credentials, now, past)
 
-    # Process .gzip file into events
-    process_audit_log_events(helper, ew, credentials, audit_logs['location'])
+    # Request an audit log export from DPOD API
+    audit_logs = processor.get_audit_logs(now, past)
 
-    send_status_event(helper, ew, "Luna HSM log processing completed.")
-    # Save Checkpoint
+    # Process resultant .gzip file into events
+    processor.process_audit_log_events(audit_logs['location'])
+
+    processor.send_status_event("Luna HSM log processing completed.")
+
+    # Save Checkpoint - only save once all steps have finished.
     helper.save_check_point("last_run_%s" %
                             helper.get_arg('client_id'), now_checkpoint)
