@@ -26,10 +26,6 @@ Local development/testing depends on:
 * Docker/Docker Desktop
 * Python3
 
-## TODO
-* Create build/deploy scripts
-* Add testing framework
-
 ### Links
 
 * https://www.thalesdocs.com/dpod/api/audit_query/index.html

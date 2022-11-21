@@ -33,9 +33,9 @@ class HsmEventMeta:
 
 
 class HsmEvent:
-    thales_date_format = "%Y-%m-%d %H:%M:%S %Z"
+    thales_date_format = "%Y-%m-%d %H:%M:%S.%f %Z"
     sample_event = {
-        "time": "2022-10-30 14:52:47 UTC",
+        "time": "2022-10-30 14:52:47.046662 UTC",
         "source": "thales/cloudhsm/1334049524932",
         "resourceID": "f59a597b-19b9-41df-b479-1530ed60fca3",
         "actorID": "d5fa3ace-a79f-40ba-8e21-3ebf0bf0250a",

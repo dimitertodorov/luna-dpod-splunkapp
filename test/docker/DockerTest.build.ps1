@@ -64,6 +64,7 @@ task CreateDockerLunaMockContainer ResolveVariables, CreateDockerNetworks, {
 task CreateDockerSplunkContainer CreateDockerNetworks, {
     $AppPortRef = "$($SplunkDockerAppPort):8000"
     $ApiPortRef = "$($SplunkDockerApiPort):8089"
+    $HecPortRef = "8088:8088"
     exec {
         ## Start Splunk Test Container
         docker run -d `
@@ -80,6 +81,7 @@ task CreateDockerSplunkContainer CreateDockerNetworks, {
             --user root `
             -p $AppPortRef `
             -p $ApiPortRef `
+            -p $HecPortRef `
             $SplunkDockerImage
     }
 }

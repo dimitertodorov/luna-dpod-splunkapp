@@ -15,6 +15,7 @@ timeout_seconds = 240
 
 date_format = "%Y-%m-%dT%H:%M:%SZ"
 thales_date_format = '%Y-%m-%d %H:%M:%S %Z'
+thales_millisecond_date_format = '%Y-%m-%d %H:%M:%S.%f %Z'
 
 
 class LunaCloudHsmProcessor:
@@ -230,25 +231,25 @@ class LunaCloudHsmProcessor:
             luna_meta = json.loads(luna_evt['meta'])
             if (self.properties['aggregate_event_types'] and str(luna_evt['action']) in self.properties['aggregate_event_types']):
                 aggregate_key = str(luna_evt['action'])+":"+str(luna_evt['status'])+":"+str(
-                    luna_meta['clientip'])+":"+str(luna_meta['partid'])
+                    luna_meta['clientip'])+":"+str(luna_meta['partid'])+":" + str(luna_evt['source']) + ":" + str(luna_evt['resourceID']) + ":" + str(luna_evt['actorID'])
                 if aggregate_key in aggregate_events:
                     aggregate_events[aggregate_key]['count'] += 1
-                    aggregate_events[aggregate_key]['end_time'] = str(round(datetime.datetime.strptime(
-                        luna_evt['time'], thales_date_format).timestamp()))
+                    aggregate_events[aggregate_key]['end_time'] = str(LunaCloudHsmProcessor.parse_luna_event_time(
+                        luna_evt['time']).timestamp())
                 else:
                     aggregate_events[aggregate_key] = {
                         'count': 1,
                         'original_event': luna_evt,
                         'original_meta': luna_meta,
-                        'begin_time': str(round(datetime.datetime.strptime(
-                            luna_evt['time'], thales_date_format).timestamp())),
-                        'end_time': str(round(datetime.datetime.strptime(
-                            luna_evt['time'], thales_date_format).timestamp()))
+                        'begin_time': str(LunaCloudHsmProcessor.parse_luna_event_time(
+                            luna_evt['time']).timestamp()),
+                        'end_time': str(LunaCloudHsmProcessor.parse_luna_event_time(
+                            luna_evt['time']).timestamp())
                     }
             else:
                 build_event = "_time=" + \
-                    str(round(datetime.datetime.strptime(
-                        luna_evt['time'], thales_date_format).timestamp()))+","
+                    str(LunaCloudHsmProcessor.parse_luna_event_time(
+                        luna_evt['time']).timestamp())+","
                 build_event = build_event + "resourceID=" + \
                     str(luna_evt['resourceID'])+','
                 build_event = build_event + "clientid=" + \
@@ -263,6 +264,8 @@ class LunaCloudHsmProcessor:
                     str(luna_evt['status'])+','
                 build_event = build_event + "clientip=" + \
                     str(luna_meta['clientip'])+','
+                build_event = build_event + "role=" + \
+                    str(luna_meta['role'])+','
                 build_event = build_event + "hsmid=" + \
                     str(luna_meta['hsmid'])+','
                 build_event = build_event + "partid=" + \
@@ -276,8 +279,8 @@ class LunaCloudHsmProcessor:
             luna_evt = aggregate_events[agg_key]['original_event']
             luna_meta = aggregate_events[agg_key]['original_meta']
             build_event = "_time=" + \
-                str(round(datetime.datetime.strptime(
-                    luna_evt['time'], thales_date_format).timestamp()))+","
+                str(LunaCloudHsmProcessor.parse_luna_event_time(
+                    luna_evt['time']).timestamp())+","
             build_event = build_event + "clientid=" + \
                 str(self.properties['client_id'])+','
             build_event = build_event + "resourceID=" + \
@@ -289,6 +292,8 @@ class LunaCloudHsmProcessor:
             build_event = build_event + "status="+str(luna_evt['status'])+','
             build_event = build_event + "clientip=" + \
                 str(luna_meta['clientip'])+','
+            build_event = build_event + "role=" + \
+                str(luna_meta['role'])+','
             build_event = build_event + "hsmid="+str(luna_meta['hsmid'])+','
             build_event = build_event + "partid="+str(luna_meta['partid'])+','
             build_event = build_event + "count=" + \
@@ -317,6 +322,12 @@ class LunaCloudHsmProcessor:
         else:
             return self.helper.new_event(data, time=time, host=self.api_url.hostname, index=index, source=index, sourcetype=sourcetype, done=True, unbroken=True)
 
+    def parse_luna_event_time(event_time):
+        try:
+            return datetime.datetime.strptime(event_time, thales_date_format)
+        except ValueError:
+            return datetime.datetime.strptime(event_time, thales_millisecond_date_format)
+
 
 def validate_input(helper, definition):
     validator = LunaCloudHsmProcessor(helper, None, definition, True)
@@ -341,7 +352,7 @@ def collect_events(helper, ew):
     now = int(round(time.time()))
     past = now - interval
 
-    # Check the last run checkpoint if set and use that as the 'from' parameter to Thales. 
+    # Check the last run checkpoint if set and use that as the 'from' parameter to Thales.
     # Make sure the interval is not more than 30 days
     if last_checkpoint and ((past > int(last_checkpoint)) and ((now - int(last_checkpoint)) < 2591998)):
         past = datetime.datetime.fromtimestamp(
